@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# Sifmography Infinite Transcriber — Native App Launcher Wrapper
+# ─────────────────────────────────────────────────────────────
+
+# Resolve the absolute workspace directory
+WORKSPACE="/Users/asifgondal/.gemini/antigravity/scratch"
+
+# Execute the launch command script in the background and log outputs
+bash "$WORKSPACE/launch_transcribe.command" > "$WORKSPACE/transcriber.log" 2>&1 &

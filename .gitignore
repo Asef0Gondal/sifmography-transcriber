@@ -1,0 +1,27 @@
+# Node / JS
+node_modules/
+dist/
+dist-electron/
+release/
+out/
+build/
+bin/
+
+# Python envs & outputs
+venv/
+__pycache__/
+*.pyc
+*.spec
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Heavy media assets
+*.pdf
+*.zip
+*.tar.gz
+*.mp3
+*.wav
+*.mp4
+*.mkv
