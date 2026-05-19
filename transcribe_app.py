@@ -89,6 +89,34 @@ def normalize_timestamp(t_str: str) -> str:
         pass
     return t_str
 
+def run_command_with_progress(cmd, progress_prefix, progress_fn, start_val=0.3, end_val=0.8):
+    """Runs a command and parses yt-dlp download progress to update Gradio progress bar."""
+    import re
+    percent_re = re.compile(r'\[download\]\s+(\d+\.\d+)%')
+    
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1
+    )
+    
+    while True:
+        line = process.stdout.readline()
+        if not line and process.poll() is not None:
+            break
+        if line:
+            match = percent_re.search(line)
+            if match:
+                pct = float(match.group(1))
+                val = start_val + (pct / 100.0) * (end_val - start_val)
+                progress_fn(val, desc=f"{progress_prefix}: {pct}%")
+                
+    _, stderr_output = process.communicate()
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd, stderr=stderr_output)
+
 def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", progress=gr.Progress()) -> str:
     """Download audio from a URL using yt-dlp, with optional section clipping, and convert/resample to 16kHz mono WAV."""
     progress(0.1, desc="Analyzing URL...")
@@ -118,9 +146,8 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
         
     cmd.append(url)
     
-    progress(0.3, desc="Downloading media range from link...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        run_command_with_progress(cmd, "Downloading Audio", progress, start_val=0.3, end_val=0.8)
         downloaded_files = list(temp_dir.glob(f"yt_download_{timestamp}_*"))
         if not downloaded_files:
             raise FileNotFoundError("Could not locate the downloaded audio file in temp directory.")
@@ -129,22 +156,32 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
         return wav_path
     except subprocess.CalledProcessError as e:
         progress(1.0, desc="Failed to download from link.")
-        error_msg = e.stderr or e.stdout or "Unknown error"
+        error_msg = e.stderr or "Unknown error"
         if len(error_msg) > 500:
             error_msg = error_msg[-500:]
         raise RuntimeError(f"Link download failed:\n{error_msg}")
 
-def download_video_from_url(url: str, start_time: str = "", end_time: str = "", progress=gr.Progress()) -> str:
+def download_video_from_url(url: str, start_time: str = "", end_time: str = "", resolution: str = "Best Quality", progress=gr.Progress()) -> str:
     """Download video from a URL using yt-dlp, with optional section clipping, and merge/convert to MP4."""
     progress(0.1, desc="Analyzing video URL...")
     temp_dir = Path(tempfile.gettempdir())
     timestamp = int(time.time())
     output_template = str(temp_dir / f"yt_video_{timestamp}_%(id)s.%(ext)s")
     
+    # Map friendly resolutions to yt-dlp format selectors
+    res_map = {
+        "Best Quality": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "1080p": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/best",
+        "720p": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best",
+        "480p": "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/best",
+        "360p": "bv*[height<=360][ext=mp4]+ba[ext=m4a]/b[height<=360][ext=mp4]/best"
+    }
+    format_spec = res_map.get(resolution, res_map["Best Quality"])
+    
     cmd = [
         "yt-dlp",
         "--no-playlist",
-        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "-f", format_spec,
         "--merge-output-format", "mp4",
         "-o", output_template
     ]
@@ -161,9 +198,8 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
         
     cmd.append(url)
     
-    progress(0.3, desc="Downloading video from link...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        run_command_with_progress(cmd, "Downloading Video", progress, start_val=0.3, end_val=0.8)
         downloaded_files = list(temp_dir.glob(f"yt_video_{timestamp}_*"))
         if not downloaded_files:
             raise FileNotFoundError("Could not locate the downloaded video file in temp directory.")
@@ -172,12 +208,12 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
         return video_path
     except subprocess.CalledProcessError as e:
         progress(1.0, desc="Failed to download video.")
-        error_msg = e.stderr or e.stdout or "Unknown error"
+        error_msg = e.stderr or "Unknown error"
         if len(error_msg) > 500:
             error_msg = error_msg[-500:]
         raise RuntimeError(f"Video download failed:\n{error_msg}")
 
-def process_video_download(url_input, clip_start, clip_end, progress=gr.Progress()):
+def process_video_download(url_input, clip_start, clip_end, resolution, progress=gr.Progress()):
     url_input = url_input.strip() if url_input else ""
     if not url_input:
         raise gr.Error("Please enter an audio/video URL link first.")
@@ -191,9 +227,10 @@ def process_video_download(url_input, clip_start, clip_end, progress=gr.Progress
             url_input,
             start_time=clip_start,
             end_time=clip_end,
+            resolution=resolution,
             progress=progress
         )
-        return gr.update(value=video_path, visible=True, label="📥 Save Downloaded Video")
+        return gr.update(value=video_path, visible=True, label=f"📥 Save {resolution} Video")
     except Exception as e:
         raise gr.Error(f"Video Download Failed: {str(e)}")
 
@@ -606,6 +643,14 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
                     info="Clip end (HH:MM:SS or seconds)"
                 )
             
+            video_resolution_dropdown = gr.Dropdown(
+                choices=["Best Quality", "1080p", "720p", "480p", "360p"],
+                value="Best Quality",
+                label="🎬 Video Download Resolution",
+                info="Applies when saving video files directly from links.",
+                interactive=True
+            )
+            
             # Dynamic cached models dropdown
             cached_models = get_huggingface_cached_models()
             model_dropdown = gr.Dropdown(
@@ -756,7 +801,8 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
         inputs=[
             url_input,
             clip_start_input,
-            clip_end_input
+            clip_end_input,
+            video_resolution_dropdown
         ],
         outputs=[file_downloader]
     )
