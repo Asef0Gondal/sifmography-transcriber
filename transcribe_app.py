@@ -90,14 +90,16 @@ def normalize_timestamp(t_str: str) -> str:
     return t_str
 
 def run_command_with_progress(cmd, progress_prefix, progress_fn, start_val=0.3, end_val=0.8):
-    """Runs a command and parses yt-dlp download progress to update Gradio progress bar."""
+    """Runs a command and parses yt-dlp/ffmpeg download progress to update Gradio progress bar."""
     import re
     percent_re = re.compile(r'\[download\]\s+(\d+\.\d+)%')
+    # Matches ffmpeg progress: frame=   47 fps= 44 q=-1.0 size=     768kB time=00:00:01.28 speed=1.19x
+    ffmpeg_re = re.compile(r'size=\s*(\d+[a-zA-Z]+).*time=\s*(-?\d+:\d+:\d+\.?\d*).*speed=\s*(\S+)')
     
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # Redirect stderr to stdout to prevent OS pipe deadlocks
         text=True,
         bufsize=1
     )
@@ -125,6 +127,15 @@ def run_command_with_progress(cmd, progress_prefix, progress_fn, start_val=0.3, 
                 progress_fn(0.88, desc="⚙️ Finalizing media container...")
                 continue
                 
+            # Check if it is ffmpeg streaming progress
+            ffmpeg_match = ffmpeg_re.search(line)
+            if ffmpeg_match:
+                size_str = ffmpeg_match.group(1)
+                time_str = ffmpeg_match.group(2)
+                speed_str = ffmpeg_match.group(3)
+                progress_fn(0.55, desc=f"✂️ Clipping & Downloading ({progress_prefix}): {size_str} fetched (duration: {time_str}) at {speed_str}...")
+                continue
+                
             match = percent_re.search(line)
             if match:
                 pct = float(match.group(1))
@@ -143,9 +154,9 @@ def run_command_with_progress(cmd, progress_prefix, progress_fn, start_val=0.3, 
                 else:
                     progress_fn(val, desc=f"📥 {progress_prefix} ({track_label} Track): {pct}%")
                 
-    _, stderr_output = process.communicate()
+    process.wait()
     if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, cmd, stderr=stderr_output)
+        raise subprocess.CalledProcessError(process.returncode, cmd, stderr="Execution failed. Check terminal logs.")
 
 def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", progress=gr.Progress()) -> str:
     """Download audio from a URL using yt-dlp, with optional section clipping, and convert/resample to 16kHz mono WAV."""
