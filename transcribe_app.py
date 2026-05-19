@@ -58,6 +58,7 @@ def download_audio_from_url(url: str, progress=gr.Progress()) -> str:
     
     cmd = [
         "yt-dlp",
+        "--no-playlist",
         "-x",
         "--audio-format", "wav",
         "--audio-quality", "0",
@@ -442,7 +443,7 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
         )
         gr.Markdown(
             "Locally-powered audio and video transcription built for Apple Silicon Macs. "
-            "Simply upload or record any file to transcribe or translate it instantly.",
+            "Simply upload files, record audio, or paste links (YouTube, Instagram Reels, etc.) to transcribe instantly.",
             elem_classes=["header-desc"]
         )
         
@@ -460,8 +461,8 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
             )
             
             url_input = gr.Textbox(
-                label="🔗 Or Enter Audio/Video Link (YouTube, SoundCloud, Direct URL, etc.)",
-                placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                label="🔗 Or Enter Audio/Video Link (YouTube, Instagram Reels, SoundCloud, etc.)",
+                placeholder="e.g. https://www.instagram.com/reel/CoY12345/ or YouTube URL",
                 interactive=True
             )
             
