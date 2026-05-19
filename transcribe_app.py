@@ -117,6 +117,66 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
             error_msg = error_msg[-500:]
         raise RuntimeError(f"Link download failed:\n{error_msg}")
 
+def download_video_from_url(url: str, start_time: str = "", end_time: str = "", progress=gr.Progress()) -> str:
+    """Download video from a URL using yt-dlp, with optional section clipping, and merge/convert to MP4."""
+    progress(0.1, desc="Analyzing video URL...")
+    temp_dir = Path(tempfile.gettempdir())
+    timestamp = int(time.time())
+    output_template = str(temp_dir / f"yt_video_{timestamp}_%(id)s.%(ext)s")
+    
+    cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "--merge-output-format", "mp4",
+        "-o", output_template
+    ]
+    
+    start_time = start_time.strip() if start_time else ""
+    end_time = end_time.strip() if end_time else ""
+    
+    if start_time or end_time:
+        start_norm = normalize_timestamp(start_time) if start_time else "0"
+        end_norm = normalize_timestamp(end_time) if end_time else "inf"
+        section_arg = f"*{start_norm}-{end_norm}"
+        cmd.extend(["--download-sections", section_arg])
+        progress(0.2, desc=f"Configuring video clip range: {start_norm} to {end_norm}...")
+        
+    cmd.append(url)
+    
+    progress(0.3, desc="Downloading video from link...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        downloaded_files = list(temp_dir.glob(f"yt_video_{timestamp}_*"))
+        if not downloaded_files:
+            raise FileNotFoundError("Could not locate the downloaded video file in temp directory.")
+        video_path = str(downloaded_files[0])
+        progress(0.9, desc="Video download & merging complete!")
+        return video_path
+    except subprocess.CalledProcessError as e:
+        progress(1.0, desc="Failed to download video.")
+        error_msg = e.stderr or e.stdout or "Unknown error"
+        if len(error_msg) > 500:
+            error_msg = error_msg[-500:]
+        raise RuntimeError(f"Video download failed:\n{error_msg}")
+
+def process_video_download(url_input, clip_start, clip_end, progress=gr.Progress()):
+    url_input = url_input.strip() if url_input else ""
+    if not url_input:
+        raise gr.Error("Please enter an audio/video URL link first.")
+        
+    try:
+        progress(0.1, desc="Starting video download...")
+        video_path = download_video_from_url(
+            url_input,
+            start_time=clip_start,
+            end_time=clip_end,
+            progress=progress
+        )
+        return gr.update(value=video_path, visible=True, label="📥 Save Downloaded Video")
+    except Exception as e:
+        raise gr.Error(f"Video Download Failed: {str(e)}")
+
 def get_huggingface_cached_models():
     """List already downloaded whisper models in HuggingFace cache directory."""
     cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
@@ -573,7 +633,9 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
                 )
                 
             # Submit Button
-            transcribe_btn = gr.Button("🚀 Start Transcription", elem_classes=["transcribe-btn"])
+            with gr.Row():
+                transcribe_btn = gr.Button("🚀 Start Transcription", elem_classes=["transcribe-btn"])
+                download_video_btn = gr.Button("📥 Download Video Only", elem_classes=["action-btn"])
             
             # Shutdown Button
             shutdown_btn = gr.Button("🛑 Shutdown Server", variant="stop", elem_classes=["action-btn"])
@@ -661,6 +723,17 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
             detailed_textbox,
             status_log
         ]
+    )
+
+    # Wire up Video Download action
+    download_video_btn.click(
+        process_video_download,
+        inputs=[
+            url_input,
+            clip_start_input,
+            clip_end_input
+        ],
+        outputs=[file_downloader]
     )
  
 if __name__ == "__main__":
