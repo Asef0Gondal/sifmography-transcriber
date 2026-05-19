@@ -49,6 +49,23 @@ def extract_audio_from_video(video_path: str, progress=gr.Progress()) -> str:
         progress(1.0, desc="Failed to extract audio.")
         raise RuntimeError(f"FFmpeg audio extraction failed:\n{e.stderr}")
 
+def is_valid_timestamp(t_str: str) -> bool:
+    """Validate if timestamp string is empty or standard HH:MM:SS, MM:SS, or numeric seconds format."""
+    t_str = t_str.strip()
+    if not t_str:
+        return True
+    if t_str.replace(".", "", 1).isdigit():
+        return True
+    parts = t_str.split(":")
+    if len(parts) in [2, 3]:
+        try:
+            for p in parts:
+                float(p)
+            return True
+        except ValueError:
+            pass
+    return False
+
 def normalize_timestamp(t_str: str) -> str:
     """Normalize timestamp string into standard HH:MM:SS or SS format for yt-dlp."""
     t_str = t_str.strip()
@@ -165,6 +182,9 @@ def process_video_download(url_input, clip_start, clip_end, progress=gr.Progress
     if not url_input:
         raise gr.Error("Please enter an audio/video URL link first.")
         
+    if not is_valid_timestamp(clip_start) or not is_valid_timestamp(clip_end):
+        raise gr.Error("Invalid clip start or end time format. Please use HH:MM:SS, MM:SS, or seconds (digits).")
+        
     try:
         progress(0.1, desc="Starting video download...")
         video_path = download_video_from_url(
@@ -257,6 +277,11 @@ def process_transcription(
     
     if not file_path and not url_input:
         return "⚠️ Please upload a file or enter an audio/video URL first.", "", "No input provided"
+
+    # Validate timestamps if URL input is used
+    if url_input:
+        if not is_valid_timestamp(clip_start) or not is_valid_timestamp(clip_end):
+            return "⚠️ Invalid clip start or end time format. Please use HH:MM:SS, MM:SS, or seconds (digits).", "", "Invalid Time Input"
 
     # Set offline mode
     if work_offline:
