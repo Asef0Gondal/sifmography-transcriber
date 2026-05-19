@@ -49,8 +49,31 @@ def extract_audio_from_video(video_path: str, progress=gr.Progress()) -> str:
         progress(1.0, desc="Failed to extract audio.")
         raise RuntimeError(f"FFmpeg audio extraction failed:\n{e.stderr}")
 
-def download_audio_from_url(url: str, progress=gr.Progress()) -> str:
-    """Download audio from a URL using yt-dlp and convert/resample to 16kHz mono WAV."""
+def normalize_timestamp(t_str: str) -> str:
+    """Normalize timestamp string into standard HH:MM:SS or SS format for yt-dlp."""
+    t_str = t_str.strip()
+    if not t_str:
+        return ""
+    if t_str.replace(".", "", 1).isdigit():
+        return t_str
+    
+    parts = t_str.split(":")
+    try:
+        if len(parts) == 2:
+            m = int(parts[0])
+            s = int(parts[1])
+            return f"00:{m:02d}:{s:02d}"
+        elif len(parts) == 3:
+            h = int(parts[0])
+            m = int(parts[1])
+            s = int(parts[2])
+            return f"{h:02d}:{m:02d}:{s:02d}"
+    except ValueError:
+        pass
+    return t_str
+
+def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", progress=gr.Progress()) -> str:
+    """Download audio from a URL using yt-dlp, with optional section clipping, and convert/resample to 16kHz mono WAV."""
     progress(0.1, desc="Analyzing URL...")
     temp_dir = Path(tempfile.gettempdir())
     timestamp = int(time.time())
@@ -63,11 +86,22 @@ def download_audio_from_url(url: str, progress=gr.Progress()) -> str:
         "--audio-format", "wav",
         "--audio-quality", "0",
         "--postprocessor-args", "ffmpeg:-ar 16000 -ac 1",
-        "-o", output_template,
-        url
+        "-o", output_template
     ]
     
-    progress(0.3, desc="Downloading media from link...")
+    start_time = start_time.strip() if start_time else ""
+    end_time = end_time.strip() if end_time else ""
+    
+    if start_time or end_time:
+        start_norm = normalize_timestamp(start_time) if start_time else "0"
+        end_norm = normalize_timestamp(end_time) if end_time else "inf"
+        section_arg = f"*{start_norm}-{end_norm}"
+        cmd.extend(["--download-sections", section_arg])
+        progress(0.2, desc=f"Configuring time range clip: {start_norm} to {end_norm}...")
+        
+    cmd.append(url)
+    
+    progress(0.3, desc="Downloading media range from link...")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         downloaded_files = list(temp_dir.glob(f"yt_download_{timestamp}_*"))
@@ -149,6 +183,8 @@ def resolve_local_model_path(repo_id: str) -> str:
 def process_transcription(
     file_path,
     url_input,
+    clip_start,
+    clip_end,
     model_name,
     custom_model,
     language_code,
@@ -189,13 +225,20 @@ def process_transcription(
     try:
         if url_input:
             status_logs.append(f"🔗 Link detected: {url_input}")
+            if clip_start or clip_end:
+                status_logs.append(f"✂️ Requested clip range: {clip_start or 'Start'} to {clip_end or 'End'}")
             if work_offline:
                 status_logs.append("⚠️ Note: Working Offline is enabled. If this link requires internet access, download may fail.")
             progress(0.05, desc="Initializing link download...")
-            downloaded_wav = download_audio_from_url(url_input, progress=progress)
+            downloaded_wav = download_audio_from_url(
+                url_input,
+                start_time=clip_start,
+                end_time=clip_end,
+                progress=progress
+            )
             temp_wav_path = downloaded_wav
             audio_target = downloaded_wav
-            status_logs.append("📥 Successfully downloaded and converted link to audio stream.")
+            status_logs.append("📥 Successfully downloaded and converted link segment to audio stream.")
         else:
             original_path = Path(file_path)
             file_extension = original_path.suffix.lower()
@@ -466,6 +509,18 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
                 interactive=True
             )
             
+            with gr.Row():
+                clip_start_input = gr.Textbox(
+                    label="✂️ Clip Start Time (Optional)",
+                    placeholder="e.g. 00:01:30 or 90",
+                    info="Clip start (HH:MM:SS or seconds)"
+                )
+                clip_end_input = gr.Textbox(
+                    label="✂️ Clip End Time (Optional)",
+                    placeholder="e.g. 00:05:00 or 300",
+                    info="Clip end (HH:MM:SS or seconds)"
+                )
+            
             # Dynamic cached models dropdown
             cached_models = get_huggingface_cached_models()
             model_dropdown = gr.Dropdown(
@@ -582,6 +637,8 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
         inputs=[
             file_input,
             url_input,
+            clip_start_input,
+            clip_end_input,
             model_dropdown,
             custom_model_input,
             language_dropdown,
