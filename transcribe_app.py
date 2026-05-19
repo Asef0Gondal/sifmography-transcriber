@@ -102,16 +102,46 @@ def run_command_with_progress(cmd, progress_prefix, progress_fn, start_val=0.3, 
         bufsize=1
     )
     
+    is_audio_pass = False
+    last_pct = 0.0
+    
     while True:
         line = process.stdout.readline()
         if not line and process.poll() is not None:
             break
         if line:
+            # Check for Merger step
+            if "merger" in line.lower() or "merging formats" in line.lower():
+                progress_fn(0.82, desc="⚡ Merging Video & Audio tracks (FFmpeg)...")
+                continue
+            
+            # Check for Audio Extraction step
+            if "extractaudio" in line.lower() or ("destination" in line.lower() and ".wav" in line.lower()):
+                progress_fn(0.85, desc="🔊 Converting/Extracting Audio stream...")
+                continue
+                
+            # Check for general post-processing
+            if "postprocess" in line.lower() or "deleting original file" in line.lower():
+                progress_fn(0.88, desc="⚙️ Finalizing media container...")
+                continue
+                
             match = percent_re.search(line)
             if match:
                 pct = float(match.group(1))
+                # Detect transition from video download to audio download
+                if pct < last_pct - 30.0:
+                    is_audio_pass = True
+                last_pct = pct
+                
+                # Scale the progress bar value
                 val = start_val + (pct / 100.0) * (end_val - start_val)
-                progress_fn(val, desc=f"{progress_prefix}: {pct}%")
+                
+                track_label = "Audio" if is_audio_pass else "Video"
+                # If progress_prefix contains "Audio", we don't need track labels
+                if "audio" in progress_prefix.lower():
+                    progress_fn(val, desc=f"📥 {progress_prefix}: {pct}%")
+                else:
+                    progress_fn(val, desc=f"📥 {progress_prefix} ({track_label} Track): {pct}%")
                 
     _, stderr_output = process.communicate()
     if process.returncode != 0:
