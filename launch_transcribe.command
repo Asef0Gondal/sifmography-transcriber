@@ -12,7 +12,7 @@ cd "$DIR"
 echo -ne "\033]0;✨ Sifmography Infinite Transcriber\007"
 
 # Check venv exists
-VENV_PYTHON="$DIR/Voice-Clone-Studio/venv/bin/python"
+VENV_PYTHON="$(dirname "$DIR")/Voice-Clone-Studio/venv/bin/python"
 if [ ! -f "$VENV_PYTHON" ]; then
   echo "❌  Voice-Clone-Studio Virtual environment not found."
   echo "    Please make sure the environment is installed."

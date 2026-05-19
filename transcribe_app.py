@@ -49,6 +49,39 @@ def extract_audio_from_video(video_path: str, progress=gr.Progress()) -> str:
         progress(1.0, desc="Failed to extract audio.")
         raise RuntimeError(f"FFmpeg audio extraction failed:\n{e.stderr}")
 
+def download_audio_from_url(url: str, progress=gr.Progress()) -> str:
+    """Download audio from a URL using yt-dlp and convert/resample to 16kHz mono WAV."""
+    progress(0.1, desc="Analyzing URL...")
+    temp_dir = Path(tempfile.gettempdir())
+    timestamp = int(time.time())
+    output_template = str(temp_dir / f"yt_download_{timestamp}_%(id)s.%(ext)s")
+    
+    cmd = [
+        "yt-dlp",
+        "-x",
+        "--audio-format", "wav",
+        "--audio-quality", "0",
+        "--postprocessor-args", "ffmpeg:-ar 16000 -ac 1",
+        "-o", output_template,
+        url
+    ]
+    
+    progress(0.3, desc="Downloading media from link...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        downloaded_files = list(temp_dir.glob(f"yt_download_{timestamp}_*"))
+        if not downloaded_files:
+            raise FileNotFoundError("Could not locate the downloaded audio file in temp directory.")
+        wav_path = str(downloaded_files[0])
+        progress(0.9, desc="Download & conversion complete!")
+        return wav_path
+    except subprocess.CalledProcessError as e:
+        progress(1.0, desc="Failed to download from link.")
+        error_msg = e.stderr or e.stdout or "Unknown error"
+        if len(error_msg) > 500:
+            error_msg = error_msg[-500:]
+        raise RuntimeError(f"Link download failed:\n{error_msg}")
+
 def get_huggingface_cached_models():
     """List already downloaded whisper models in HuggingFace cache directory."""
     cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
@@ -114,6 +147,7 @@ def resolve_local_model_path(repo_id: str) -> str:
 
 def process_transcription(
     file_path,
+    url_input,
     model_name,
     custom_model,
     language_code,
@@ -122,8 +156,10 @@ def process_transcription(
     work_offline,
     progress=gr.Progress()
 ):
-    if not file_path:
-        return "⚠️ Please upload or record an audio or video file first.", "", "No file provided"
+    url_input = url_input.strip() if url_input else ""
+    
+    if not file_path and not url_input:
+        return "⚠️ Please upload a file or enter an audio/video URL first.", "", "No input provided"
 
     # Set offline mode
     if work_offline:
@@ -147,22 +183,32 @@ def process_transcription(
 
     start_time = time.time()
     temp_wav_path = None
-    original_path = Path(file_path)
-    file_extension = original_path.suffix.lower()
-    
     status_logs = []
     
     try:
-        # Check if it's a video and extract audio
-        if file_extension in VIDEO_EXTENSIONS:
-            status_logs.append("🎥 Detected Video file. Extracting high-quality audio stream...")
-            progress(0.1, desc="Extracting audio from video...")
-            temp_wav_path = extract_audio_from_video(file_path, progress=progress)
-            audio_target = temp_wav_path
-            status_logs.append("🔊 Audio successfully extracted and resampled to 16kHz mono WAV.")
+        if url_input:
+            status_logs.append(f"🔗 Link detected: {url_input}")
+            if work_offline:
+                status_logs.append("⚠️ Note: Working Offline is enabled. If this link requires internet access, download may fail.")
+            progress(0.05, desc="Initializing link download...")
+            downloaded_wav = download_audio_from_url(url_input, progress=progress)
+            temp_wav_path = downloaded_wav
+            audio_target = downloaded_wav
+            status_logs.append("📥 Successfully downloaded and converted link to audio stream.")
         else:
-            status_logs.append("🎵 Audio file detected directly.")
-            audio_target = file_path
+            original_path = Path(file_path)
+            file_extension = original_path.suffix.lower()
+            
+            # Check if it's a video and extract audio
+            if file_extension in VIDEO_EXTENSIONS:
+                status_logs.append("🎥 Detected Video file. Extracting high-quality audio stream...")
+                progress(0.1, desc="Extracting audio from video...")
+                temp_wav_path = extract_audio_from_video(file_path, progress=progress)
+                audio_target = temp_wav_path
+                status_logs.append("🔊 Audio successfully extracted and resampled to 16kHz mono WAV.")
+            else:
+                status_logs.append("🎵 Audio file detected directly.")
+                audio_target = file_path
 
         # Setup language parameters
         lang = "None"
@@ -413,6 +459,12 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
                 interactive=True
             )
             
+            url_input = gr.Textbox(
+                label="🔗 Or Enter Audio/Video Link (YouTube, SoundCloud, Direct URL, etc.)",
+                placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                interactive=True
+            )
+            
             # Dynamic cached models dropdown
             cached_models = get_huggingface_cached_models()
             model_dropdown = gr.Dropdown(
@@ -528,6 +580,7 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
         process_transcription,
         inputs=[
             file_input,
+            url_input,
             model_dropdown,
             custom_model_input,
             language_dropdown,

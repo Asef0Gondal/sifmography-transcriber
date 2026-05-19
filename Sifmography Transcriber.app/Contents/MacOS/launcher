@@ -7,4 +7,4 @@
 WORKSPACE="/Users/asifgondal/.gemini/antigravity/scratch"
 
 # Execute the launch command script in the background and log outputs
-bash "$WORKSPACE/launch_transcribe.command" > "$WORKSPACE/transcriber.log" 2>&1 &
+bash "$WORKSPACE/sifmography-transcriber/launch_transcribe.command" > "$WORKSPACE/transcriber.log" 2>&1 &

@@ -11,3 +11,7 @@
 💡  Keep this window open while using the app.
 🛑  Close this window to shut down the server.
 
+/Users/asifgondal/.gemini/antigravity/scratch/launch_transcribe.command: line 68: 93372 Killed: 9               "$VENV_PYTHON" "$DIR/transcribe_app.py"
+/Users/asifgondal/.gemini/antigravity/scratch/launch_transcribe.command: line 69: 93372: command not found
+
+🛑 Shutting down server...
