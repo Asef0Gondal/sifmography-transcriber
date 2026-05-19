@@ -38,7 +38,7 @@ echo "────────────────────────�
 echo ""
 
 # Start server using the specified virtual environment python
-"$VENV_PYTHON" "$DIR/transcribe_app.py" &
+"$VENV_PYTHON" -u "$DIR/transcribe_app.py" &
 SERVER_PID=$!
 
 # Wait for server to respond

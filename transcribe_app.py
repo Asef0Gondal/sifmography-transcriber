@@ -168,6 +168,8 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
     cmd = [
         "yt-dlp",
         "--no-playlist",
+        "--add-header", "User-Agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "--extractor-args", "youtube:player_client=android_vr,web",
         "-x",
         "--audio-format", "wav",
         "--audio-quality", "0",
@@ -212,6 +214,7 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
     # Map friendly resolutions to yt-dlp format selectors
     res_map = {
         "Best Quality": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "Fast (Pre-merged MP4)": "b[ext=mp4]/best",
         "1080p": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/best",
         "720p": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best",
         "480p": "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/best",
@@ -222,6 +225,8 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
     cmd = [
         "yt-dlp",
         "--no-playlist",
+        "--add-header", "User-Agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "--extractor-args", "youtube:player_client=android_vr,web",
         "-f", format_spec,
         "--merge-output-format", "mp4",
         "-o", output_template
@@ -685,7 +690,7 @@ with gr.Blocks(title="Sifmography Infinite Transcriber") as demo:
                 )
             
             video_resolution_dropdown = gr.Dropdown(
-                choices=["Best Quality", "1080p", "720p", "480p", "360p"],
+                choices=["Best Quality", "Fast (Pre-merged MP4)", "1080p", "720p", "480p", "360p"],
                 value="Best Quality",
                 label="🎬 Video Download Resolution",
                 info="Applies when saving video files directly from links.",
