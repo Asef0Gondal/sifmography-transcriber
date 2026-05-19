@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 # Ensure correct virtual environment packages are loaded
-sys.path.insert(0, str(Path(__file__).parent / "Voice-Clone-Studio/venv/lib/python3.12/site-packages"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "Voice-Clone-Studio/venv/lib/python3.12/site-packages"))
 
 import gradio as gr
 import mlx.core as mx
@@ -367,7 +367,7 @@ def process_transcription(
             "try:\n"
             "    # Add the current venv site-packages to sys.path in the subprocess\n"
             "    import pathlib\n"
-            "    sys.path.insert(0, str(pathlib.Path(sys.argv[8]) / 'Voice-Clone-Studio/venv/lib/python3.12/site-packages'))\n"
+            "    sys.path.insert(0, str(pathlib.Path(sys.argv[8]).parent / 'Voice-Clone-Studio/venv/lib/python3.12/site-packages'))\n"
             "    import mlx_whisper, mlx.core as mx;\n"
             "    audio_path = sys.argv[1]; model_name = sys.argv[2]; language = sys.argv[3];\n"
             "    task = sys.argv[4]; word_timestamps = sys.argv[5] == 'True';\n"
