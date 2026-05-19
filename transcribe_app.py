@@ -165,6 +165,9 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
     timestamp = int(time.time())
     output_template = str(temp_dir / f"yt_download_{timestamp}_%(id)s.%(ext)s")
     
+    is_youtube = "youtube.com" in url or "youtu.be" in url
+    use_local_clipping = (start_time or end_time) and not is_youtube
+    
     cmd = [
         "yt-dlp",
         "--no-playlist",
@@ -180,12 +183,14 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
     start_time = start_time.strip() if start_time else ""
     end_time = end_time.strip() if end_time else ""
     
-    if start_time or end_time:
+    if (start_time or end_time) and not use_local_clipping:
         start_norm = normalize_timestamp(start_time) if start_time else "0"
         end_norm = normalize_timestamp(end_time) if end_time else "inf"
         section_arg = f"*{start_norm}-{end_norm}"
         cmd.extend(["--download-sections", section_arg])
         progress(0.2, desc=f"Configuring time range clip: {start_norm} to {end_norm}...")
+    elif use_local_clipping:
+        progress(0.2, desc="Configuring full audio download with local post-clipping...")
         
     cmd.append(url)
     
@@ -195,6 +200,25 @@ def download_audio_from_url(url: str, start_time: str = "", end_time: str = "", 
         if not downloaded_files:
             raise FileNotFoundError("Could not locate the downloaded audio file in temp directory.")
         wav_path = str(downloaded_files[0])
+        
+        # Apply local clipping if needed
+        if use_local_clipping:
+            progress(0.85, desc="✂️ Clipping audio segment locally (FFmpeg)...")
+            clipped_path = str(temp_dir / f"yt_download_clip_{timestamp}_{Path(wav_path).name}")
+            
+            clip_cmd = ["ffmpeg", "-y"]
+            if start_time:
+                clip_cmd.extend(["-ss", normalize_timestamp(start_time)])
+            if end_time:
+                clip_cmd.extend(["-to", normalize_timestamp(end_time)])
+            clip_cmd.extend(["-i", wav_path, "-c", "copy", clipped_path])
+            
+            subprocess.run(clip_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            # Remove original full file and update path
+            if os.path.exists(wav_path):
+                os.unlink(wav_path)
+            wav_path = clipped_path
+            
         progress(0.9, desc="Download & conversion complete!")
         return wav_path
     except subprocess.CalledProcessError as e:
@@ -210,6 +234,9 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
     temp_dir = Path(tempfile.gettempdir())
     timestamp = int(time.time())
     output_template = str(temp_dir / f"yt_video_{timestamp}_%(id)s.%(ext)s")
+    
+    is_youtube = "youtube.com" in url or "youtu.be" in url
+    use_local_clipping = (start_time or end_time) and not is_youtube
     
     # Map friendly resolutions to yt-dlp format selectors
     res_map = {
@@ -235,12 +262,14 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
     start_time = start_time.strip() if start_time else ""
     end_time = end_time.strip() if end_time else ""
     
-    if start_time or end_time:
+    if (start_time or end_time) and not use_local_clipping:
         start_norm = normalize_timestamp(start_time) if start_time else "0"
         end_norm = normalize_timestamp(end_time) if end_time else "inf"
         section_arg = f"*{start_norm}-{end_norm}"
         cmd.extend(["--download-sections", section_arg])
         progress(0.2, desc=f"Configuring video clip range: {start_norm} to {end_norm}...")
+    elif use_local_clipping:
+        progress(0.2, desc="Configuring full video download with local post-clipping...")
         
     cmd.append(url)
     
@@ -250,6 +279,25 @@ def download_video_from_url(url: str, start_time: str = "", end_time: str = "", 
         if not downloaded_files:
             raise FileNotFoundError("Could not locate the downloaded video file in temp directory.")
         video_path = str(downloaded_files[0])
+        
+        # Apply local clipping if needed
+        if use_local_clipping:
+            progress(0.85, desc="✂️ Clipping video segment locally (FFmpeg)...")
+            clipped_path = str(temp_dir / f"yt_video_clip_{timestamp}_{Path(video_path).name}")
+            
+            clip_cmd = ["ffmpeg", "-y"]
+            if start_time:
+                clip_cmd.extend(["-ss", normalize_timestamp(start_time)])
+            if end_time:
+                clip_cmd.extend(["-to", normalize_timestamp(end_time)])
+            clip_cmd.extend(["-i", video_path, "-c", "copy", clipped_path])
+            
+            subprocess.run(clip_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            # Remove original full file and update path
+            if os.path.exists(video_path):
+                os.unlink(video_path)
+            video_path = clipped_path
+            
         progress(0.9, desc="Video download & merging complete!")
         return video_path
     except subprocess.CalledProcessError as e:
